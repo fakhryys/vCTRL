@@ -1,4 +1,8 @@
 # vCTRL - Virtual Controller
+<p align="center">
+<img width="502" height="564" alt="image" src="https://github.com/user-attachments/assets/b68a062d-5c7f-4b7b-9412-42eedc75fa8d" />
+</p>
+
 vCTRL is a Windows utility that turns your mouse and keyboard into a virtual well-known USB game controllers.
 
 ## Features
