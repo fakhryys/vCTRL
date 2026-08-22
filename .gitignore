@@ -165,6 +165,9 @@ cython_debug/
 # Config file (user-specific settings)
 config.json
 
+# Profiles folder (user-specific profiles)
+profiles/
+
 # Icon file (if customized by user)
 # Uncomment if you want to ignore custom icons
 # icon.ico

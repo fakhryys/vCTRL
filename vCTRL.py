@@ -91,6 +91,8 @@ DEFAULT_CONFIG = {
     "run_minimized": False,  # Start application minimized to tray
     "trigger_intensity": 0.1,  # Trigger step amount per key press (0.01 - 0.5)
     "show_status": True,  # Show status banner
+    "last_profile": "Default",  # Last loaded profile name
+    "invert_y": False,  # Invert vertical axis
 }
 
 def load_config() -> dict:
@@ -526,6 +528,7 @@ class MouseJoystickMapper:
         self.sensitivity = 1.0
         self.deadzone    = 0.05
         self.use_right_stick = False
+        self.invert_y = False
 
         # Trigger values controlled by TriggerHook (Ctrl+Scroll)
         self.left_trigger  = 0.0   # 0.0 – 1.0
@@ -623,6 +626,7 @@ class MouseJoystickMapper:
                 sensitivity = self.sensitivity
                 deadzone    = self.deadzone
                 right_stick = self.use_right_stick
+                invert_y    = self.invert_y
                 lt          = self.left_trigger
                 rt          = self.right_trigger
             if self._gamepad:
@@ -636,6 +640,11 @@ class MouseJoystickMapper:
                         ny = -((cy2 / self._sh) * 2.0 - 1.0)
                         nx = max(-1.0, min(1.0, nx * sensitivity))
                         ny = max(-1.0, min(1.0, ny * sensitivity))
+                        
+                        # Invert Y axis if enabled
+                        if invert_y:
+                            ny = -ny
+                        
                         self.deadzone = deadzone
                         nx, ny = self._apply_deadzone(nx, ny)
                         if right_stick:
@@ -927,11 +936,18 @@ class App(tk.Tk):
         self.crosshair    = CrosshairOverlay()
         self.trigger_overlay = TriggerOverlay()
         
-        # Current profile tracking
-        self.current_profile = "Default"
+        # Current profile tracking - load last used profile
+        last_profile = cfg.get("last_profile", "Default")
+        self.current_profile = last_profile
+        
+        # Load the last used profile if it's not Default
+        if last_profile != "Default" and last_profile in get_profiles():
+            self.cfg = load_profile(last_profile)
+        else:
+            self.current_profile = "Default"
 
-        # Apply theme
-        self._current_theme = cfg.get("theme", "dark")
+        # Apply theme (use self.cfg since it may have been updated)
+        self._current_theme = self.cfg.get("theme", "dark")
         self._apply_theme()
 
         self.title("vCTRL — Virtual Controller")
@@ -943,35 +959,36 @@ class App(tk.Tk):
         self._set_icon()
 
         self._enabled_var = tk.BooleanVar(value=False)
-        self._sens_var    = tk.DoubleVar(value=cfg["sensitivity"])
-        self._dz_var      = tk.DoubleVar(value=cfg["deadzone"])
-        self._stick_var   = tk.StringVar(value=cfg["stick"])
-        self._trigger_intensity_var = tk.DoubleVar(value=cfg.get("trigger_intensity", 0.1))
+        self._sens_var    = tk.DoubleVar(value=self.cfg["sensitivity"])
+        self._dz_var      = tk.DoubleVar(value=self.cfg["deadzone"])
+        self._stick_var   = tk.StringVar(value=self.cfg["stick"])
+        self._trigger_intensity_var = tk.DoubleVar(value=self.cfg.get("trigger_intensity", 0.1))
 
         # Hotkey combo strings
-        self._hk_toggle_var = tk.StringVar(value=cfg.get("hotkey_toggle", "capslock"))
-        self._hk_center_var = tk.StringVar(value=cfg.get("hotkey_center", "`"))
-        self._hk_trigger_up_var   = tk.StringVar(value=cfg.get("hotkey_trigger_up",   "w"))
-        self._hk_trigger_down_var = tk.StringVar(value=cfg.get("hotkey_trigger_down", "s"))
-        self._hk_lt_up_var        = tk.StringVar(value=cfg.get("hotkey_lt_up",   "q"))
-        self._hk_lt_down_var      = tk.StringVar(value=cfg.get("hotkey_lt_down",  "a"))
-        self._hk_rt_up_var        = tk.StringVar(value=cfg.get("hotkey_rt_up",   "e"))
-        self._hk_rt_down_var      = tk.StringVar(value=cfg.get("hotkey_rt_down",  "d"))
-        self._hk_switch_stick_var       = tk.StringVar(value=cfg.get("hotkey_switch_stick",    "alt+x"))
-        self._hk_reset_triggers_var     = tk.StringVar(value=cfg.get("hotkey_reset_triggers",  "alt+t"))
-        self._hk_crosshair_var          = tk.StringVar(value=cfg.get("hotkey_crosshair",       "f1"))
-        self._hk_trigger_overlay_var    = tk.StringVar(value=cfg.get("hotkey_trigger_overlay", "f2"))
+        self._hk_toggle_var = tk.StringVar(value=self.cfg.get("hotkey_toggle", "capslock"))
+        self._hk_center_var = tk.StringVar(value=self.cfg.get("hotkey_center", "`"))
+        self._hk_trigger_up_var   = tk.StringVar(value=self.cfg.get("hotkey_trigger_up",   "w"))
+        self._hk_trigger_down_var = tk.StringVar(value=self.cfg.get("hotkey_trigger_down", "s"))
+        self._hk_lt_up_var        = tk.StringVar(value=self.cfg.get("hotkey_lt_up",   "q"))
+        self._hk_lt_down_var      = tk.StringVar(value=self.cfg.get("hotkey_lt_down",  "a"))
+        self._hk_rt_up_var        = tk.StringVar(value=self.cfg.get("hotkey_rt_up",   "e"))
+        self._hk_rt_down_var      = tk.StringVar(value=self.cfg.get("hotkey_rt_down",  "d"))
+        self._hk_switch_stick_var       = tk.StringVar(value=self.cfg.get("hotkey_switch_stick",    "alt+x"))
+        self._hk_reset_triggers_var     = tk.StringVar(value=self.cfg.get("hotkey_reset_triggers",  "alt+t"))
+        self._hk_crosshair_var          = tk.StringVar(value=self.cfg.get("hotkey_crosshair",       "f1"))
+        self._hk_trigger_overlay_var    = tk.StringVar(value=self.cfg.get("hotkey_trigger_overlay", "f2"))
 
         # Listening state
         self._listening_for = None
 
-        # Overlay and trigger state vars
-        self._crosshair_var = tk.BooleanVar(value=cfg.get("crosshair", False))
-        self._trigger_overlay_var = tk.BooleanVar(value=cfg.get("trigger_overlay", False))
-        self._sep_triggers_var = tk.BooleanVar(value=cfg.get("separate_triggers", False))
-        self._reset_opposite_trigger_var = tk.BooleanVar(value=cfg.get("reset_opposite_trigger", False))
-        self._run_minimized_var = tk.BooleanVar(value=cfg.get("run_minimized", False))
-        self._show_status_var = tk.BooleanVar(value=cfg.get("show_status", True))
+        # Overlay and trigger state vars (use self.cfg)
+        self._crosshair_var = tk.BooleanVar(value=self.cfg.get("crosshair", False))
+        self._trigger_overlay_var = tk.BooleanVar(value=self.cfg.get("trigger_overlay", False))
+        self._sep_triggers_var = tk.BooleanVar(value=self.cfg.get("separate_triggers", False))
+        self._reset_opposite_trigger_var = tk.BooleanVar(value=self.cfg.get("reset_opposite_trigger", False))
+        self._run_minimized_var = tk.BooleanVar(value=self.cfg.get("run_minimized", False))
+        self._show_status_var = tk.BooleanVar(value=self.cfg.get("show_status", True))
+        self._invert_y_var = tk.BooleanVar(value=self.cfg.get("invert_y", False))
 
         # Trigger display vars
         self._lt_var = tk.IntVar(value=0)
@@ -1069,31 +1086,21 @@ class App(tk.Tk):
         # Delete button (rightmost)
         tk.Button(
             btn_container, text="Delete",
-            font=("Segoe UI", 9),
-            bg=self.RED, fg=self.FG,
+            font=("Segoe UI", 9, "bold"),
+            bg=self.RED, fg="white",
             activebackground=self.RED, activeforeground="white",
             relief="flat", padx=12, pady=2, cursor="hand2",
             command=self._delete_profile
         ).pack(side="right", padx=(4, 0))
         
-        # Save button
+        # Save As button
         tk.Button(
             btn_container, text="Save As...",
-            font=("Segoe UI", 9),
-            bg=self.BG2, fg=self.FG,
+            font=("Segoe UI", 9, "bold"),
+            bg=self.ACCENT, fg="white",
             activebackground=self.GREEN, activeforeground="white",
             relief="flat", padx=12, pady=2, cursor="hand2",
             command=self._save_profile_as
-        ).pack(side="right", padx=(4, 0))
-        
-        # Load button
-        tk.Button(
-            btn_container, text="Load",
-            font=("Segoe UI", 9),
-            bg=self.BG2, fg=self.FG,
-            activebackground=self.ACCENT, activeforeground="white",
-            relief="flat", padx=12, pady=2, cursor="hand2",
-            command=self._load_profile
         ).pack(side="right", padx=(4, 0))
         
         # Profile dropdown (between label and buttons)
@@ -1101,7 +1108,7 @@ class App(tk.Tk):
         self._profile_combo = ttk.Combobox(
             profile_frame, textvariable=self._profile_var,
             values=["Default"] + get_profiles(),
-            state="readonly", width=24, font=self.FONT)
+            state="readonly", width=32, font=self.FONT)
         self._profile_combo.pack(side="left", padx=(0, 0))
         self._profile_combo.bind("<<ComboboxSelected>>", self._on_profile_selected)
 
@@ -1362,14 +1369,15 @@ class App(tk.Tk):
         # Save Settings button
         save_btn_frame = tk.Frame(p, bg=self.BG)
         save_btn_frame.pack(pady=(12, 8))
-        tk.Button(
+        self._save_btn_hotkeys = tk.Button(
             save_btn_frame, text="Save Settings",
             font=("Segoe UI", 10, "bold"),
             bg=self.ACCENT, fg="white",
             activebackground=self.GREEN, activeforeground="white",
             relief="flat", width=20, pady=6, cursor="hand2",
             command=self._on_save_button_click
-        ).pack()
+        )
+        self._save_btn_hotkeys.pack()
 
         # Bottom padding
         tk.Frame(p, bg=self.BG, height=8).pack()
@@ -1403,6 +1411,9 @@ class App(tk.Tk):
         self._build_slider(p, "Dead-zone", self._dz_var,
                            0.0, 0.5, 0.01, lambda v: f"{int(v*100)}%",
                            self._on_dz_change)
+        
+        self._build_toggle_switch(p, "Invert Y Axis", self._invert_y_var,
+                                   self._on_invert_y_change)
 
         ttk.Separator(p, orient="horizontal").pack(fill="x", padx=16, pady=6)
 
@@ -1440,14 +1451,15 @@ class App(tk.Tk):
         # Save Settings button
         save_btn_frame = tk.Frame(p, bg=self.BG)
         save_btn_frame.pack(pady=(12, 8))
-        tk.Button(
+        self._save_btn_options = tk.Button(
             save_btn_frame, text="Save Settings",
             font=("Segoe UI", 10, "bold"),
             bg=self.ACCENT, fg="white",
             activebackground=self.GREEN, activeforeground="white",
             relief="flat", width=20, pady=6, cursor="hand2",
             command=self._on_save_button_click
-        ).pack()
+        )
+        self._save_btn_options.pack()
 
         # Bottom padding
         tk.Frame(p, bg=self.BG, height=8).pack()
@@ -1860,15 +1872,26 @@ class App(tk.Tk):
 
     def _update_preview(self):
         try:
-            cx, cy = self.mapper._get_cursor_pos()
-            sw, sh = self.mapper._sw, self.mapper._sh
-            nx = (cx / sw) * 2.0 - 1.0
-            ny = -((cy / sh) * 2.0 - 1.0)
-            nx = max(-1.0, min(1.0, nx * self._sens_var.get()))
-            ny = max(-1.0, min(1.0, ny * self._sens_var.get()))
-            nx, ny = self.mapper._apply_deadzone(nx, ny)
-            self._pos_label.config(text=f"X: {nx:+.3f}   Y: {ny:+.3f}")
-            self._draw_joystick_preview(nx, ny)
+            # Only update preview if joystick is enabled
+            if self._enabled_var.get():
+                cx, cy = self.mapper._get_cursor_pos()
+                sw, sh = self.mapper._sw, self.mapper._sh
+                nx = (cx / sw) * 2.0 - 1.0
+                ny = -((cy / sh) * 2.0 - 1.0)
+                nx = max(-1.0, min(1.0, nx * self._sens_var.get()))
+                ny = max(-1.0, min(1.0, ny * self._sens_var.get()))
+                
+                # Apply Y-axis inversion if enabled (same as in mapper)
+                if self._invert_y_var.get():
+                    ny = -ny
+                
+                nx, ny = self.mapper._apply_deadzone(nx, ny)
+                self._pos_label.config(text=f"X: {nx:+.3f}   Y: {ny:+.3f}")
+                self._draw_joystick_preview(nx, ny)
+            else:
+                # When disabled, show centered position
+                self._pos_label.config(text=f"X: {0.0:+.3f}   Y: {0.0:+.3f}")
+                self._draw_joystick_preview(0.0, 0.0)
         except Exception:
             pass
         self.after(33, self._update_preview)
@@ -1962,6 +1985,15 @@ class App(tk.Tk):
         with self.mapper._lock:
             self.mapper.deadzone = val
 
+    def _on_invert_y_change(self):
+        """Toggle Y-axis inversion and center the cursor."""
+        with self.mapper._lock:
+            self.mapper.invert_y = self._invert_y_var.get()
+        # Center cursor when toggling invert
+        self._do_center()
+        status = "Y axis inverted" if self._invert_y_var.get() else "Y axis normal"
+        self._set_status(status, ok=True)
+
     def _on_trigger_intensity_change(self, val: float):
         """Update trigger step intensity in the hook."""
         self.trigger_hook.set_trigger_intensity(val)
@@ -2011,6 +2043,24 @@ class App(tk.Tk):
         """Manual save button clicked - save settings and show confirmation."""
         self._save_settings()
         self._set_status("Settings saved successfully", ok=True)
+        
+        # Update both save buttons to show success state
+        for btn in [self._save_btn_hotkeys, self._save_btn_options]:
+            try:
+                btn.config(text="Settings saved", bg=self.GREEN)
+            except Exception:
+                pass
+        
+        # Reset buttons after 5 seconds
+        self.after(5000, self._reset_save_buttons)
+    
+    def _reset_save_buttons(self):
+        """Reset save buttons to their default state."""
+        for btn in [self._save_btn_hotkeys, self._save_btn_options]:
+            try:
+                btn.config(text="Save Settings", bg=self.ACCENT)
+            except Exception:
+                pass
 
     def _toggle_crosshair(self):
         """Toggle crosshair overlay (for hotkey)."""
@@ -2045,22 +2095,24 @@ class App(tk.Tk):
         self._profile_combo['values'] = profiles
 
     def _on_profile_selected(self, event=None):
-        """Called when a profile is selected from dropdown."""
-        # Just update the selection, Load button applies it
-        pass
+        """Called when a profile is selected from dropdown - auto-load the profile."""
+        self._load_profile()
 
     def _load_profile(self):
         """Load the selected profile."""
         profile_name = self._profile_var.get()
         
         if profile_name == "Default":
-            # Reset to defaults
-            self.cfg = dict(DEFAULT_CONFIG)
+            self.cfg = load_config()
         else:
-            # Load profile
             self.cfg = load_profile(profile_name)
         
         self.current_profile = profile_name
+        
+        # Save the last profile to main config so it persists across sessions
+        main_cfg = load_config()
+        main_cfg["last_profile"] = profile_name
+        save_config(main_cfg)
         
         # Update all UI variables
         self._sens_var.set(self.cfg["sensitivity"])
@@ -2073,6 +2125,7 @@ class App(tk.Tk):
         self._reset_opposite_trigger_var.set(self.cfg.get("reset_opposite_trigger", False))
         self._run_minimized_var.set(self.cfg.get("run_minimized", False))
         self._show_status_var.set(self.cfg.get("show_status", True))
+        self._invert_y_var.set(self.cfg.get("invert_y", False))
         
         # Update hotkey variables
         self._hk_toggle_var.set(self.cfg.get("hotkey_toggle", "capslock"))
@@ -2120,6 +2173,7 @@ class App(tk.Tk):
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
+        self._set_icon(dialog)
         
         # Center dialog
         dialog.geometry("320x120")
@@ -2150,14 +2204,44 @@ class App(tk.Tk):
                 self._set_status("Profile name can only contain letters, numbers, spaces, hyphens, and underscores", ok=False)
                 return
             
-            # Save current settings
-            self._save_settings()
+            # Collect current UI settings into a new config dict (don't modify self.cfg)
+            new_profile_cfg = {}
+            new_profile_cfg["sensitivity"]           = self._sens_var.get()
+            new_profile_cfg["deadzone"]              = self._dz_var.get()
+            new_profile_cfg["stick"]                 = self._stick_var.get()
+            new_profile_cfg["trigger_intensity"]     = self._trigger_intensity_var.get()
+            new_profile_cfg["crosshair"]             = self._crosshair_var.get()
+            new_profile_cfg["trigger_overlay"]       = self._trigger_overlay_var.get()
+            new_profile_cfg["separate_triggers"]     = self._sep_triggers_var.get()
+            new_profile_cfg["reset_opposite_trigger"] = self._reset_opposite_trigger_var.get()
+            new_profile_cfg["run_minimized"]         = self._run_minimized_var.get()
+            new_profile_cfg["show_status"]           = self._show_status_var.get()
+            new_profile_cfg["invert_y"]              = self._invert_y_var.get()
+            new_profile_cfg["hotkey_toggle"]         = self._hk_toggle_var.get()
+            new_profile_cfg["hotkey_center"]         = self._hk_center_var.get()
+            new_profile_cfg["hotkey_trigger_up"]     = self._hk_trigger_up_var.get()
+            new_profile_cfg["hotkey_trigger_down"]   = self._hk_trigger_down_var.get()
+            new_profile_cfg["hotkey_lt_up"]          = self._hk_lt_up_var.get()
+            new_profile_cfg["hotkey_lt_down"]        = self._hk_lt_down_var.get()
+            new_profile_cfg["hotkey_rt_up"]          = self._hk_rt_up_var.get()
+            new_profile_cfg["hotkey_rt_down"]        = self._hk_rt_down_var.get()
+            new_profile_cfg["hotkey_switch_stick"]   = self._hk_switch_stick_var.get()
+            new_profile_cfg["hotkey_reset_triggers"] = self._hk_reset_triggers_var.get()
+            new_profile_cfg["hotkey_crosshair"]      = self._hk_crosshair_var.get()
+            new_profile_cfg["hotkey_trigger_overlay"] = self._hk_trigger_overlay_var.get()
             
-            # Save as profile
-            if save_profile(name, self.cfg):
+            # Save as new profile (not to current profile)
+            if save_profile(name, new_profile_cfg):
                 self.current_profile = name
+                self.cfg = new_profile_cfg
                 self._profile_var.set(name)
                 self._refresh_profile_list()
+                
+                # Save the last profile to main config
+                main_cfg = load_config()
+                main_cfg["last_profile"] = name
+                save_config(main_cfg)
+                
                 self._set_status(f"Profile '{name}' saved", ok=True)
                 dialog.destroy()
             else:
@@ -2207,6 +2291,7 @@ class App(tk.Tk):
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
+        self._set_icon(dialog)
         
         # Center dialog
         dialog.geometry("320x120")
@@ -2223,9 +2308,67 @@ class App(tk.Tk):
         
         def confirm():
             if delete_profile(profile_name):
+                # Switch to Default profile after deletion
                 self._profile_var.set("Default")
-                self.current_profile = "Default"
                 self._refresh_profile_list()
+                
+                # Load the Default profile
+                self.cfg = load_config()
+                self.current_profile = "Default"
+                
+                # Update all UI variables from the loaded Default profile
+                self._sens_var.set(self.cfg["sensitivity"])
+                self._dz_var.set(self.cfg["deadzone"])
+                self._stick_var.set(self.cfg["stick"])
+                self._trigger_intensity_var.set(self.cfg.get("trigger_intensity", 0.1))
+                self._crosshair_var.set(self.cfg.get("crosshair", False))
+                self._trigger_overlay_var.set(self.cfg.get("trigger_overlay", False))
+                self._sep_triggers_var.set(self.cfg.get("separate_triggers", False))
+                self._reset_opposite_trigger_var.set(self.cfg.get("reset_opposite_trigger", False))
+                self._run_minimized_var.set(self.cfg.get("run_minimized", False))
+                self._show_status_var.set(self.cfg.get("show_status", True))
+                self._invert_y_var.set(self.cfg.get("invert_y", False))
+                
+                # Update hotkey variables
+                self._hk_toggle_var.set(self.cfg.get("hotkey_toggle", "capslock"))
+                self._hk_center_var.set(self.cfg.get("hotkey_center", "`"))
+                self._hk_trigger_up_var.set(self.cfg.get("hotkey_trigger_up", "w"))
+                self._hk_trigger_down_var.set(self.cfg.get("hotkey_trigger_down", "s"))
+                self._hk_lt_up_var.set(self.cfg.get("hotkey_lt_up", "q"))
+                self._hk_lt_down_var.set(self.cfg.get("hotkey_lt_down", "a"))
+                self._hk_rt_up_var.set(self.cfg.get("hotkey_rt_up", "e"))
+                self._hk_rt_down_var.set(self.cfg.get("hotkey_rt_down", "d"))
+                self._hk_switch_stick_var.set(self.cfg.get("hotkey_switch_stick", "alt+x"))
+                self._hk_reset_triggers_var.set(self.cfg.get("hotkey_reset_triggers", "alt+t"))
+                self._hk_crosshair_var.set(self.cfg.get("hotkey_crosshair", "n"))
+                self._hk_trigger_overlay_var.set(self.cfg.get("hotkey_trigger_overlay", "m"))
+                
+                # Apply all settings
+                self._apply_all_settings()
+                
+                # Update overlays
+                if self._crosshair_var.get():
+                    self.crosshair.show()
+                else:
+                    self.crosshair.hide()
+                    
+                if self._trigger_overlay_var.get():
+                    self.trigger_overlay.show()
+                else:
+                    self.trigger_overlay.hide()
+                
+                # Update status visibility
+                self._on_show_status_change()
+                
+                # Rebuild current tab if it's hotkeys or options
+                if self._active_tab in ("hotkeys", "options"):
+                    self._switch_tab(self._active_tab)
+                
+                # Update last_profile in main config
+                main_cfg = load_config()
+                main_cfg["last_profile"] = "Default"
+                save_config(main_cfg)
+                
                 self._set_status(f"Profile '{profile_name}' deleted", ok=True)
             else:
                 self._set_status("Failed to delete profile", ok=False)
@@ -2262,6 +2405,7 @@ class App(tk.Tk):
             self.mapper.sensitivity      = self.cfg["sensitivity"]
             self.mapper.deadzone         = self.cfg["deadzone"]
             self.mapper.use_right_stick  = (self.cfg["stick"] == "Right")
+            self.mapper.invert_y         = self.cfg.get("invert_y", False)
         
         # Apply trigger intensity
         self.trigger_hook.set_trigger_intensity(self.cfg.get("trigger_intensity", 0.1))
@@ -2309,6 +2453,7 @@ class App(tk.Tk):
         self.cfg["reset_opposite_trigger"] = self._reset_opposite_trigger_var.get()
         self.cfg["run_minimized"]         = self._run_minimized_var.get()
         self.cfg["show_status"]              = self._show_status_var.get()
+        self.cfg["invert_y"]              = self._invert_y_var.get()
         self.cfg["hotkey_toggle"]         = self._hk_toggle_var.get()
         self.cfg["hotkey_center"]         = self._hk_center_var.get()
         self.cfg["hotkey_trigger_up"]     = self._hk_trigger_up_var.get()
@@ -2321,7 +2466,12 @@ class App(tk.Tk):
         self.cfg["hotkey_reset_triggers"] = self._hk_reset_triggers_var.get()
         self.cfg["hotkey_crosshair"]      = self._hk_crosshair_var.get()
         self.cfg["hotkey_trigger_overlay"] = self._hk_trigger_overlay_var.get()
-        save_config(self.cfg)
+        
+        # Save to the appropriate location based on current profile
+        if self.current_profile == "Default":
+            save_config(self.cfg)
+        else:
+            save_profile(self.current_profile, self.cfg)
 
 
     # ── Helpers ───────────────────────────────────────────────────────────────
@@ -2330,12 +2480,15 @@ class App(tk.Tk):
         color = self.GREEN if ok else self.RED
         self._status_label.config(text=f"  {msg}", fg=color)
 
-    def _set_icon(self):
+    def _set_icon(self, window=None):
         """Set window icon if icon.ico exists."""
         try:
             icon_path = os.path.join(RESOURCE_DIR, "icon.ico")
             if os.path.exists(icon_path):
-                self.iconbitmap(icon_path)
+                if window is None:
+                    self.iconbitmap(icon_path)
+                else:
+                    window.iconbitmap(icon_path)
         except Exception:
             pass
 
