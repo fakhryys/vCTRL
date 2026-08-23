@@ -10,7 +10,7 @@ from typing import Callable
 def build_slider(parent, theme, label: str, var: tk.DoubleVar,
                 from_: float, to: float, resolution: float,
                 format_func: Callable[[float], str],
-                callback: Callable[[float], None]) -> tk.Frame:
+                callback: Callable[[float], None]) -> tuple:
     """
     Build a labeled slider widget.
     
@@ -26,7 +26,7 @@ def build_slider(parent, theme, label: str, var: tk.DoubleVar,
         callback: Callback when value changes
     
     Returns:
-        Frame containing the slider
+        Tuple of (frame, update_label_func) where update_label_func refreshes the value label
     """
     row = tk.Frame(parent, bg=theme.background)
     row.pack(fill="x", padx=16, pady=4)
@@ -45,6 +45,10 @@ def build_slider(parent, theme, label: str, var: tk.DoubleVar,
         value_label.config(text=format_func(float(val)))
         callback(float(val))
     
+    def update_label():
+        """Update the value label to reflect current variable value."""
+        value_label.config(text=format_func(var.get()))
+    
     scale = tk.Scale(
         row, variable=var, from_=from_, to=to,
         resolution=resolution, orient="horizontal",
@@ -56,4 +60,4 @@ def build_slider(parent, theme, label: str, var: tk.DoubleVar,
     )
     scale.pack(side="left", fill="x", expand=True, padx=(4, 8))
     
-    return row
+    return row, update_label

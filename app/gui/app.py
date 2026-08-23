@@ -12,7 +12,7 @@ from pathlib import Path
 from ..config import AppConfig, ConfigManager, ProfileManager
 from ..controller import MouseJoystickMapper
 from ..input import KeyboardHook, HotkeyConfig
-from ..overlays import CrosshairOverlay, TriggerOverlay
+from ..overlays import CrosshairOverlay, TriggerOverlay, ProfileMessageOverlay
 from ..system.paths import get_resource_dir
 from ..system.tray import TrayIcon, TRAY_AVAILABLE
 from .theme import Theme, get_theme, set_window_title_bar_theme
@@ -40,6 +40,7 @@ class App(tk.Tk):
         
         self.crosshair = CrosshairOverlay()
         self.trigger_overlay = TriggerOverlay()
+        self.profile_message = ProfileMessageOverlay()
         self.tray_icon = None
         
         self.current_profile = config.last_profile
@@ -64,6 +65,8 @@ class App(tk.Tk):
         
         if self.config.run_minimized and TRAY_AVAILABLE:
             self.after(100, self.withdraw)
+            # Show profile message overlay for 5 seconds
+            self.after(150, lambda: self.profile_message.show(self.current_profile, 5000))
     
     def _init_ui_variables(self):
         """Initialize Tkinter variables."""
@@ -105,6 +108,7 @@ class App(tk.Tk):
         self._profile_var = tk.StringVar(value=self.current_profile)
         
         self._toggle_switch_drawers = {}
+        self._slider_label_updaters = {}
         self._hk_entry_widgets = []
         self._preview_running = False
         self._dirty_panels = set()
@@ -218,14 +222,15 @@ class App(tk.Tk):
             command=self._delete_profile
         ).pack(side="right", padx=(4, 0))
         
-        tk.Button(
+        self._save_as_btn = tk.Button(
             btn_container, text="Save As...",
             font=("Segoe UI", 9, "bold"),
             bg=self.theme.accent, fg="white",
             activebackground=self.theme.success, activeforeground="white",
             relief="flat", padx=12, pady=2, cursor="hand2",
             command=self._save_profile_as
-        ).pack(side="right", padx=(4, 0))
+        )
+        self._save_as_btn.pack(side="right", padx=(4, 0))
         
         self._profile_combo = ttk.Combobox(
             profile_frame, textvariable=self._profile_var,
@@ -488,10 +493,14 @@ class App(tk.Tk):
         tk.Label(cursor_hdr, text="Cursor", font=("Segoe UI", 10, "bold"),
                  bg=self.theme.background, fg=self.theme.foreground).pack(side="left")
         
-        build_slider(panel, self.theme, "Sensitivity", self._sens_var,
+        _, update_sens = build_slider(panel, self.theme, "Sensitivity", self._sens_var,
                     0.1, 3.0, 0.05, lambda v: f"{v:.2f}x", self._on_sens_change)
-        build_slider(panel, self.theme, "Dead-zone", self._dz_var,
+        self._slider_label_updaters[id(self._sens_var)] = update_sens
+        
+        _, update_dz = build_slider(panel, self.theme, "Dead-zone", self._dz_var,
                     0.0, 0.5, 0.01, lambda v: f"{int(v*100)}%", self._on_dz_change)
+        self._slider_label_updaters[id(self._dz_var)] = update_dz
+        
         build_toggle_switch(panel, self.theme, "Invert Y Axis", self._invert_y_var,
                            self._on_invert_y_change, self._toggle_switch_drawers)
         
@@ -502,9 +511,11 @@ class App(tk.Tk):
         tk.Label(trig_hdr, text="Triggers", font=("Segoe UI", 10, "bold"),
                  bg=self.theme.background, fg=self.theme.foreground).pack(side="left")
         
-        build_slider(panel, self.theme, "Intensity", self._trigger_intensity_var,
+        _, update_trig_int = build_slider(panel, self.theme, "Intensity", self._trigger_intensity_var,
                     0.01, 0.5, 0.01, lambda v: f"{int(v*100)}%",
                     self._on_trigger_intensity_change)
+        self._slider_label_updaters[id(self._trigger_intensity_var)] = update_trig_int
+        
         build_toggle_switch(panel, self.theme, "Separate Triggers", self._sep_triggers_var,
                            self._on_separate_triggers_change, self._toggle_switch_drawers)
         
@@ -585,6 +596,8 @@ class App(tk.Tk):
             self._hk_entry_widgets = []
             self._build_hotkeys_panel(panel)
         elif tab_name == "options":
+            # Clear slider updaters before rebuilding
+            self._slider_label_updaters.clear()
             self._build_options_panel(panel)
         else:
             self._build_overview_panel(panel)
@@ -1081,10 +1094,6 @@ class App(tk.Tk):
         
         self._on_show_status_change()
         
-        if self._active_tab in ("hotkeys", "options"):
-            self._invalidate_panel("hotkeys")
-            self._update_reset_opposite_visibility()
-        
         self._set_status(f"Profile '{profile_name}' loaded", ok=True)
     
     def _update_ui_from_config(self):
@@ -1113,6 +1122,14 @@ class App(tk.Tk):
         self._hk_reset_triggers_var.set(self.config.hotkey_reset_triggers)
         self._hk_crosshair_var.set(self.config.hotkey_crosshair)
         self._hk_trigger_overlay_var.set(self.config.hotkey_trigger_overlay)
+        
+        # Redraw all toggle switches to reflect updated values
+        for drawer_func in self._toggle_switch_drawers.values():
+            drawer_func()
+        
+        # Update all slider value labels to reflect updated values
+        for updater_func in self._slider_label_updaters.values():
+            updater_func()
     
     def _save_profile_as(self):
         """Save current settings as a new profile."""
@@ -1162,6 +1179,10 @@ class App(tk.Tk):
                 self.config_manager.save(main_config)
                 
                 self._set_status(f"Profile '{name}' saved", ok=True)
+                
+                # Show success feedback on Save As button
+                self._show_save_as_success()
+                
                 dialog.destroy()
             else:
                 self._set_status("Failed to save profile", ok=False)
@@ -1190,6 +1211,26 @@ class App(tk.Tk):
         
         entry.bind("<Return>", lambda e: save())
         entry.bind("<Escape>", lambda e: dialog.destroy())
+    
+    def _show_save_as_success(self):
+        """Show success feedback on Save As button (green with 'Done' text)."""
+        original_text = self._save_as_btn.cget("text")
+        original_bg = self._save_as_btn.cget("bg")
+        
+        # Change to success state
+        self._save_as_btn.config(
+            text="Done",
+            bg=self.theme.success
+        )
+        
+        # Revert after 2 seconds
+        def revert():
+            self._save_as_btn.config(
+                text=original_text,
+                bg=original_bg
+            )
+        
+        self.after(2000, revert)
     
     def _delete_profile(self):
         """Delete the selected profile."""
@@ -1385,6 +1426,7 @@ class App(tk.Tk):
         """Actually close the application."""
         self.crosshair.hide()
         self.trigger_overlay.hide()
+        self.profile_message.hide()
         self.mapper.stop()
         self.keyboard_hook.stop()
         if self.tray_icon:

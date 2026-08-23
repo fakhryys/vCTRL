@@ -60,7 +60,11 @@ def apply_deadzone(x: float, y: float, deadzone: float) -> Tuple[float, float]:
     """
     magnitude = math.sqrt(x * x + y * y)
     
-    if magnitude < deadzone:
+    if magnitude < deadzone or magnitude == 0.0:
+        return 0.0, 0.0
+    
+    # Avoid division by zero when deadzone is 1.0 (shouldn't happen in normal use)
+    if deadzone >= 1.0:
         return 0.0, 0.0
     
     scale = (magnitude - deadzone) / (1.0 - deadzone)
